@@ -12,11 +12,12 @@ interface QueryParams {
 
 type DocumentType<T> = T & Document;
 
-class MongooseQuery<T = any> {
+class FindQuery<T = any> {
+  private model: Model<DocumentType<T>>;
   public query: Query<DocumentType<T>[], DocumentType<T>>;
   public query_params: QueryParams;
   public query_filter: FilterQuery<DocumentType<T>>;
-  private model: Model<DocumentType<T>>;
+  
   private page = 1;
   private limit = 0;
 
@@ -222,4 +223,4 @@ class MongooseQuery<T = any> {
   }
 }
 
-export default MongooseQuery;
+export default FindQuery;

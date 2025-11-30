@@ -1,6 +1,6 @@
 ﻿# Mongoose Query Kit
 
-A wrapper class that enhances Mongoose queries with clean chaining for pagination, filtering, searching, sorting, field selection, statistics collection, and lean query support.
+Powerful query builder classes (`FindQuery` and `AggregationQuery`) that enhance Mongoose queries with clean chaining for pagination, filtering, searching, sorting, field selection, statistics collection, and lean query support.
 
 ---
 
@@ -33,47 +33,75 @@ pnpm add mongoose-query-kit
 
 ---
 
-## 🚀 Migration from v1.x to v2.0
+## 🚀 Migration from v2.x to v3.0
 
 ### Breaking Changes
 
-**v2.0.0** introduces a breaking change in the constructor:
+**v3.0.0** introduces major breaking changes:
 
-**Before (v1.x):**
-```ts
-new MongooseQuery(UserModel.find(), req.query)
-```
+1. **Class Name Changed:**
+   - `MongooseQuery` → `FindQuery` (for find-based queries)
+   - New: `AggregationQuery` (for aggregation-based queries)
 
-**After (v2.0.0):**
-```ts
-new MongooseQuery(UserModel, req.query)
-```
+2. **Import Changes:**
+   ```ts
+   // Before (v2.x)
+   import { MongooseQuery } from 'mongoose-query-kit';
+   
+   // After (v3.0.0)
+   import { FindQuery, AggregationQuery } from 'mongoose-query-kit';
+   ```
+
+3. **Constructor Changes:**
+   ```ts
+   // Before (v2.x)
+   new MongooseQuery(UserModel.find(), req.query)
+   
+   // After (v3.0.0) - FindQuery
+   new FindQuery(UserModel, req.query)
+   
+   // After (v3.0.0) - AggregationQuery
+   new AggregationQuery(UserModel, req.query)
+   ```
 
 ### Migration Steps
 
-1. **Update Constructor Calls:**
-   - Remove `.find()` from Model references
-   - Pass the Model directly
+1. **Update Imports:**
+   ```ts
+   // Change from
+   import { MongooseQuery } from 'mongoose-query-kit';
+   
+   // To
+   import { FindQuery } from 'mongoose-query-kit';
+   ```
 
-2. **Update Imports (if needed):**
-   - No import changes required
+2. **Update Class Usage:**
+   ```ts
+   // Change from
+   new MongooseQuery(UserModel.find(), req.query)
+   
+   // To
+   new FindQuery(UserModel, req.query)
+   ```
 
-3. **Test Your Queries:**
-   - All existing functionality remains the same
-   - Only the constructor signature changed
+3. **Choose the Right Query Builder:**
+   - Use `FindQuery` for standard find-based queries (same as v2.x)
+   - Use `AggregationQuery` for complex aggregation pipelines with custom stages
 
-### New Features in v2.0.0
+### New Features in v3.0.0
 
+- ✅ **Two Query Builders**: `FindQuery` for find-based queries and `AggregationQuery` for aggregation pipelines
+- ✅ **Pipeline Support**: `AggregationQuery` includes `pipeline()` method for custom aggregation stages
 - ✅ **Statistics Collection**: Collect multiple counts in a single query
 - ✅ **OR/AND Filter Support**: Complex filtering with `$or` and `$and` operators
-- ✅ **Automatic Soft Delete**: Handles `is_deleted` field automatically
+- ✅ **Automatic Soft Delete**: Handles `is_deleted` field automatically (FindQuery only)
 - ✅ **Simplified API**: Pass Model directly instead of `Model.find()`
 
 ---
 
 ## 🔗 Frontend-Driven Queries (Single API Endpoint Design)
 
-Using `MongooseQuery` allows your frontend to send query parameters directly, enabling dynamic filtering, pagination, searching, and sorting—all through a single API endpoint.
+Using `FindQuery` or `AggregationQuery` allows your frontend to send query parameters directly, enabling dynamic filtering, pagination, searching, and sorting—all through a single API endpoint.
 
 This design pattern makes your backend flexible and minimizes code repetition.
 
@@ -104,7 +132,7 @@ fetch(`/api/users?${query}`);
 #### Backend Code
 
 ```ts
-import { MongooseQuery } from 'mongoose-query-kit';
+import { FindQuery } from 'mongoose-query-kit';
 import UserModel from '../models/user.model';
 
 const getUsers = async (req, res) => {
@@ -112,7 +140,7 @@ const getUsers = async (req, res) => {
   const filterableFields = ['status', 'role'];
   const sortableFields = ['name', 'email', 'createdAt'];
 
-  const result = await new MongooseQuery(UserModel, req.query)
+  const result = await new FindQuery(UserModel, req.query)
     .search(searchableFields)
     .filter(filterableFields)
     .sort(sortableFields)
@@ -131,12 +159,12 @@ const getUsers = async (req, res) => {
 ### Complete Real-World Example
 
 ```ts
-import { MongooseQuery } from 'mongoose-query-kit';
+import { FindQuery } from 'mongoose-query-kit';
 import UserModel from '../models/user.model';
 
 const getUsersWithStats = async (req, res) => {
   try {
-    const result = await new MongooseQuery(UserModel, req.query)
+    const result = await new FindQuery(UserModel, req.query)
       .search(['name', 'email']) // Allow search on name and email
       .filter(['status', 'role', 'verified']) // Only allow these filters
       .sort(['name', 'createdAt', 'email']) // Only allow sorting by these fields
@@ -164,10 +192,26 @@ const getUsersWithStats = async (req, res) => {
 
 ## 🧠 Usage
 
-### Basic Example
+### FindQuery vs AggregationQuery
+
+**FindQuery** - Use for standard find-based queries (same as v2.x):
+- Based on Mongoose `find()` method
+- Returns Mongoose Documents
+- Supports `.lean()` via `tap()`
+- Best for simple queries and CRUD operations
+
+**AggregationQuery** - Use for complex aggregation pipelines:
+- Based on Mongoose `aggregate()` method
+- Returns plain objects
+- Supports custom pipeline stages via `pipeline()` method
+- Best for complex data transformations, joins, and aggregations
+
+### FindQuery - Basic Example
 
 ```ts
-const result = await new MongooseQuery(UserModel, req.query)
+import { FindQuery } from 'mongoose-query-kit';
+
+const result = await new FindQuery(UserModel, req.query)
   .search(['name', 'email'])
   .filter()
   .sort()
@@ -177,14 +221,44 @@ const result = await new MongooseQuery(UserModel, req.query)
   .execute();
 ```
 
+### AggregationQuery - Basic Example
+
+```ts
+import { AggregationQuery } from 'mongoose-query-kit';
+
+const result = await new AggregationQuery(UserModel, req.query)
+  .search(['name', 'email'])
+  .filter()
+  .sort()
+  .fields()
+  .paginate()
+  .execute();
+```
+
+### AggregationQuery - With Custom Pipeline Stages
+
+```ts
+import { AggregationQuery } from 'mongoose-query-kit';
+
+const result = await new AggregationQuery(UserModel, req.query)
+  .filter()
+  .pipeline([
+    { $addFields: { nameUpper: { $toUpper: '$name' } } },
+    { $lookup: { from: 'posts', localField: '_id', foreignField: 'author', as: 'posts' } }
+  ])
+  .sort(['name'])
+  .paginate()
+  .execute();
+```
+
 ### Count Only Query
 
-If your query includes `is_count_only=true`, `MongooseQuery` will return only the total count in the response, skipping data fetching for performance.
+If your query includes `is_count_only=true`, both query builders will return only the total count in the response, skipping data fetching for performance.
 
 ```ts
 // Query string: ?is_count_only=true
 
-const result = await new MongooseQuery(UserModel, req.query)
+const result = await new FindQuery(UserModel, req.query)
   .filter()
   .execute();
 
@@ -204,7 +278,7 @@ const result = await new MongooseQuery(UserModel, req.query)
 Collect multiple counts in a single query. Perfect for dashboards and analytics.
 
 ```ts
-const result = await new MongooseQuery(UserModel, req.query)
+const result = await new FindQuery(UserModel, req.query)
   .filter()
   .execute([
     { key: 'active', filter: { status: 'active' } },
@@ -235,7 +309,7 @@ Support for complex MongoDB queries using `$or` and `$and` operators.
 ```ts
 // Query string: ?or[0][status]=active&or[1][role]=admin
 
-const result = await new MongooseQuery(UserModel, req.query)
+const result = await new FindQuery(UserModel, req.query)
   .filter()
   .execute();
 
@@ -244,11 +318,11 @@ const result = await new MongooseQuery(UserModel, req.query)
 
 ### Soft Delete Handling
 
-Automatically excludes documents where `is_deleted: true` unless explicitly included in the filter.
+Automatically excludes documents where `is_deleted: true` unless explicitly included in the filter (FindQuery only).
 
 ```ts
 // Automatically filters out deleted items
-const result = await new MongooseQuery(UserModel, req.query)
+const result = await new FindQuery(UserModel, req.query)
   .filter()
   .execute();
 
@@ -260,6 +334,8 @@ const result = await new MongooseQuery(UserModel, req.query)
 
 ## 📦 API Methods
 
+### Common Methods (Both FindQuery & AggregationQuery)
+
 | Method       | Description                                                                |
 | ------------ | -------------------------------------------------------------------------- |
 | `search()`   | Enables fuzzy search on specified fields using `search` query parameter   |
@@ -267,8 +343,14 @@ const result = await new MongooseQuery(UserModel, req.query)
 | `sort()`     | Sorts results, e.g. `?sort=name` or `?sort=-createdAt`                     |
 | `fields()`   | Selects fields to include, e.g. `?fields=name,email`                       |
 | `paginate()` | Adds pagination via `?page=1&limit=10`                                     |
-| `tap()`      | Provides direct access to modify the underlying Mongoose query            |
+| `tap()`      | Provides direct access to modify the query/pipeline                        |
 | `execute()`  | Runs the query, returns result and meta info. Accepts optional statistics  |
+
+### AggregationQuery Only
+
+| Method       | Description                                                                |
+| ------------ | -------------------------------------------------------------------------- |
+| `pipeline()` | Adds custom aggregation pipeline stages to the query                       |
 
 ### Method Details
 
@@ -281,7 +363,7 @@ Enables case-insensitive regex search on specified fields.
 **Example:**
 ```ts
 // Query: ?search=john
-new MongooseQuery(UserModel, req.query)
+new FindQuery(UserModel, req.query)
   .search(['name', 'email'])
 ```
 
@@ -296,7 +378,7 @@ Applies filtering from query parameters. If `applicableFields` is provided, only
 **Example:**
 ```ts
 // Query: ?status=active&role=admin
-new MongooseQuery(UserModel, req.query)
+new FindQuery(UserModel, req.query)
   .filter(['status', 'role']) // Only allow status and role filters
 ```
 
@@ -309,7 +391,7 @@ Sorts results. Defaults to `-createdAt` if no sort is specified.
 **Example:**
 ```ts
 // Query: ?sort=-createdAt,name
-new MongooseQuery(UserModel, req.query)
+new FindQuery(UserModel, req.query)
   .sort(['name', 'createdAt', 'email']) // Only allow these fields
 ```
 
@@ -322,7 +404,7 @@ Selects which fields to return. Defaults to all fields except `__v`.
 **Example:**
 ```ts
 // Query: ?fields=name,email
-new MongooseQuery(UserModel, req.query)
+new FindQuery(UserModel, req.query)
   .fields(['name', 'email', 'createdAt']) // Only allow these fields
 ```
 
@@ -336,18 +418,49 @@ Adds pagination to the query.
 **Example:**
 ```ts
 // Query: ?page=2&limit=20
-new MongooseQuery(UserModel, req.query)
+new FindQuery(UserModel, req.query)
   .paginate()
 ```
 
-#### `tap(callback: (query) => query)`
-Provides direct access to the underlying Mongoose query for advanced modifications.
+#### `tap(callback)`
+Provides direct access to modify the query or pipeline.
+
+**FindQuery Example:**
+```ts
+new FindQuery(UserModel, req.query)
+  .tap((q) => q.lean())
+  .tap((q) => q.populate('author'))
+```
+
+**AggregationQuery Example:**
+```ts
+new AggregationQuery(UserModel, req.query)
+  .tap((pipeline) => [...pipeline, { $limit: 10 }])
+```
+
+#### `pipeline(stages: PipelineStage[], position?: number)` (AggregationQuery only)
+Adds custom aggregation pipeline stages to the query.
+
+**Parameters:**
+- `stages`: Array of MongoDB aggregation pipeline stages
+- `position` (optional): Position to insert stages. If not provided, inserts before pagination/sort/project stages.
 
 **Example:**
 ```ts
-new MongooseQuery(UserModel, req.query)
-  .tap((q) => q.lean())
-  .tap((q) => q.populate('author'))
+const result = await new AggregationQuery(UserModel, req.query)
+  .filter()
+  .pipeline([
+    { $addFields: { nameUpper: { $toUpper: '$name' } } },
+    { $lookup: { 
+        from: 'posts', 
+        localField: '_id', 
+        foreignField: 'author', 
+        as: 'posts' 
+      } 
+    }
+  ])
+  .sort(['name'])
+  .execute();
 ```
 
 #### `execute(statisticsQueries?: Array<{key: string, filter: Record<string, any>}>)`
@@ -358,7 +471,7 @@ Executes the query and returns results with metadata.
 
 **Example:**
 ```ts
-const result = await new MongooseQuery(UserModel, req.query)
+const result = await new FindQuery(UserModel, req.query)
   .filter()
   .execute([
     { key: 'active', filter: { status: 'active' } },
@@ -436,7 +549,7 @@ interface User {
   status: 'active' | 'inactive';
 }
 
-const result = await new MongooseQuery<User>(UserModel, req.query)
+const result = await new FindQuery<User>(UserModel, req.query)
   .filter()
   .tap((q) => q.lean())
   .execute([
@@ -519,6 +632,6 @@ MIT © [Foysal Ahmed](https://github.com/foysalahmedmin)
 
 <!--
 npm version patch   # for 1.0.0 -> 1.0.1
-npm version minor   # for 1.0.0 -> 1.1.0
-npm version major   # for 1.0.0 -> 2.0.0
+npm version minor   # for 1.0.1 -> 2.0.0
+npm version major   # for 2.0.0 -> 3.0.0
 -->

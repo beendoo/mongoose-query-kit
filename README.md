@@ -70,15 +70,14 @@ import UserModel from '../models/user.model';
 const getUsers = async (req, res) => {
   const searchableFields = ['name', 'email'];
 
-  const ResultQuery = await new MongooseQuery(UserModel.find(), req.query)
+  const result = await new MongooseQuery(UserModel, req.query)
     .search(searchableFields)
     .filter()
     .sort()
     .fields()
     .paginate()
-    .tap((q) => q.lean());
-
-  const result = ResultQuery.execute();
+    .tap((q) => q.lean())
+    .execute();
 
   res.json(result);
 };
@@ -91,8 +90,7 @@ const getUsers = async (req, res) => {
 ### Full Example
 
 ```ts
-const result = await new MongooseQuery(UserModel.find(), req.query)
-  .lean()
+const result = await new MongooseQuery(UserModel, req.query)
   .search(['name', 'email'])
   .filter()
   .sort()
@@ -109,7 +107,7 @@ If your query includes `is_only_count=true`, `MongooseQuery` will return only th
 ```ts
 // Query string: ?is_only_count=true
 
-const result = await new MongooseQuery(UserModel.find(), req.query)
+const result = await new MongooseQuery(UserModel, req.query)
   .filter()
   .execute();
 
@@ -171,9 +169,9 @@ If `is_only_count=true` is passed in the query, the response will be:
 Fully typed with generics for safe usage:
 
 ```ts
-const result = await new MongooseQuery<User>(UserModel.find(), req.query)
-  .lean()
+const result = await new MongooseQuery<User>(UserModel, req.query)
   .filter()
+  .tap((q) => q.lean())
   .execute();
 ```
 

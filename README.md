@@ -12,12 +12,14 @@ Powerful query builder classes (`FindQuery` and `AggregationQuery`) that enhance
 - 🔢 Filtering by any query field (supports `$or` and `$and` operators)
 - ↕️ Sorting
 - 🔐 Field selection
+- 🔗 Document population (same `PopulateOptions` API for both FindQuery and AggregationQuery)
 - 🪶 Lean query support
 - 📊 Count-only query support
 - 📈 Statistics collection (collect multiple counts in a single query)
 - 🗑️ Automatic soft-delete handling (`is_deleted` field)
 - 🔗 Seamless frontend-driven query support (perfect for single-endpoint APIs)
 - 🧠 Full TypeScript support
+- 🔄 Two Query Builders (FindQuery for find operations, AggregationQuery for aggregation pipelines)
 
 ---
 
@@ -33,7 +35,7 @@ pnpm add mongoose-query-kit
 
 ---
 
-## 🚀 Migration from v2.x to v3.0
+## 🚀 Migration to v3.0
 
 ### Breaking Changes
 
@@ -198,13 +200,20 @@ const getUsersWithStats = async (req, res) => {
 - Based on Mongoose `find()` method
 - Returns Mongoose Documents
 - Supports `.lean()` via `tap()`
+- Uses Mongoose's native `populate()` method
 - Best for simple queries and CRUD operations
 
 **AggregationQuery** - Use for complex aggregation pipelines:
 - Based on Mongoose `aggregate()` method
 - Returns plain objects
 - Supports custom pipeline stages via `pipeline()` method
+- Converts `populate()` to `$lookup` aggregation stages internally
 - Best for complex data transformations, joins, and aggregations
+
+**Common API:**
+- Both use the same `PopulateOptions` format for `populate()` method
+- Same method signatures for `search()`, `filter()`, `sort()`, `paginate()`, `fields()`, `tap()`, `execute()`
+- Consistent API makes it easy to switch between FindQuery and AggregationQuery
 
 ### FindQuery - Basic Example
 
@@ -256,23 +265,19 @@ const result = await new AggregationQuery(UserModel, req.query)
 ```ts
 import { FindQuery } from 'mongoose-query-kit';
 
+// Both string and PopulateOptions work
 const result = await new FindQuery(PostModel, req.query)
   .filter()
-  .populate([
-    {
+  .populate('author')  // Simple string
+  .populate({          // Or PopulateOptions object
+    path: 'comments',
+    select: 'text createdAt',
+    match: { approved: true },
+    populate: {
       path: 'author',
-      select: 'name email',
+      select: 'name',
     },
-    {
-      path: 'comments',
-      select: 'text createdAt',
-      match: { approved: true },
-      populate: {
-        path: 'author',
-        select: 'name',
-      },
-    },
-  ])
+  })
   .paginate()
   .execute();
 ```
@@ -282,19 +287,21 @@ const result = await new FindQuery(PostModel, req.query)
 ```ts
 import { AggregationQuery } from 'mongoose-query-kit';
 
+// Same API format as FindQuery!
 const result = await new AggregationQuery(PostModel, req.query)
   .filter()
-  .populate([
-    {
-      path: 'author',
-      select: 'name email',
-      match: { active: true },
-    },
-  ])
+  .populate('author')  // Simple string (uses schema ref)
+  .populate({          // Or PopulateOptions object
+    path: 'comments',
+    select: 'text createdAt',
+    match: { approved: true },
+  })
   .sort(['createdAt'])
   .paginate()
   .execute();
 ```
+
+**Note:** Both FindQuery and AggregationQuery use the same `PopulateOptions` format for consistency. FindQuery uses Mongoose's native populate, while AggregationQuery converts to `$lookup` stages internally.
 
 ### Count Only Query
 
@@ -388,7 +395,7 @@ const result = await new FindQuery(UserModel, req.query)
 | `sort()`     | Sorts results, e.g. `?sort=name` or `?sort=-createdAt`                     |
 | `fields()`   | Selects fields to include, e.g. `?fields=name,email`                       |
 | `paginate()` | Adds pagination via `?page=1&limit=10`                                     |
-| `populate()` | Populates referenced documents (FindQuery uses populate, AggregationQuery uses $lookup) |
+| `populate()` | Populates referenced documents. Both use same `PopulateOptions` format (FindQuery uses native populate, AggregationQuery uses $lookup) |
 | `tap()`      | Provides direct access to modify the query/pipeline                        |
 | `execute()`  | Runs the query, returns result and meta info. Accepts optional statistics  |
 
@@ -469,16 +476,29 @@ new FindQuery(UserModel, req.query)
 ```
 
 #### `populate(populateConfig)`
-Populates referenced documents. Supports both simple string paths and complex object configurations.
+Populates referenced documents. **Both FindQuery and AggregationQuery use the same API format** - Mongoose's `PopulateOptions` type.
 
 **Parameters:**
-- `populateConfig`: String path or array of populate configurations
+- `populateConfig`: `string | PopulateOptions | Array<string | PopulateOptions>`
+  - `string`: Simple path (e.g., `'author'`)
+  - `PopulateOptions`: Mongoose populate options object
+  - `Array`: Multiple populate configurations
+
+**Note:** FindQuery uses Mongoose's native populate, while AggregationQuery converts populate options to `$lookup` aggregation stages internally.
 
 **FindQuery Example:**
 ```ts
 // Simple string populate
 new FindQuery(PostModel, req.query)
   .populate('author')
+  .execute();
+
+// PopulateOptions object
+new FindQuery(PostModel, req.query)
+  .populate({
+    path: 'author',
+    select: 'name email',
+  })
   .execute();
 
 // Array-based populate with options
@@ -504,17 +524,37 @@ new FindQuery(PostModel, req.query)
 
 **AggregationQuery Example:**
 ```ts
-// AggregationQuery uses $lookup internally
+// Simple string populate (uses schema ref to detect collection)
+new AggregationQuery(PostModel, req.query)
+  .populate('author')
+  .execute();
+
+// PopulateOptions object (same format as FindQuery)
+new AggregationQuery(PostModel, req.query)
+  .populate({
+    path: 'author',
+    select: 'name email',
+    match: { active: true },
+  })
+  .execute();
+
+// Array-based populate (same format as FindQuery)
 new AggregationQuery(PostModel, req.query)
   .populate([
+    'author',
     {
-      path: 'author',
-      select: 'name email',
-      match: { active: true },
+      path: 'comments',
+      select: 'text createdAt',
+      match: { approved: true },
     },
   ])
   .execute();
 ```
+
+**Key Differences:**
+- **FindQuery**: Returns Mongoose Documents, uses native Mongoose populate
+- **AggregationQuery**: Returns plain objects, converts to `$lookup` stages internally
+- **Both**: Support the same `PopulateOptions` format for consistency
 
 #### `tap(callback)`
 Provides direct access to modify the query or pipeline.

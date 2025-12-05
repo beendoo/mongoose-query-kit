@@ -1,4 +1,4 @@
-import { Model, PipelineStage } from 'mongoose';
+import { Model, PipelineStage, PopulateOptions } from 'mongoose';
 
 interface QueryParams {
   search?: string;
@@ -190,25 +190,7 @@ class AggregationQuery<T = any> {
   }
 
   populate(
-    populateConfig:
-      | string
-      | Array<
-          | string
-          | {
-              path: string;
-              select?: string | Record<string, 0 | 1>;
-              match?: Record<string, any>;
-              populate?:
-                | string
-                | Array<{
-                    path: string;
-                    select?: string | Record<string, 0 | 1>;
-                    match?: Record<string, any>;
-                  }>;
-              model?: string;
-              options?: Record<string, any>;
-            }
-        >,
+    populateConfig: string | PopulateOptions | Array<string | PopulateOptions>,
   ): this {
     const buildLookupStage = (
       path: string,
@@ -217,12 +199,9 @@ class AggregationQuery<T = any> {
         match?: Record<string, any>;
         populate?:
           | string
-          | Array<{
-              path: string;
-              select?: string | Record<string, 0 | 1>;
-              match?: Record<string, any>;
-            }>;
-        model?: string;
+          | PopulateOptions
+          | Array<string | PopulateOptions>;
+        model?: string | Model<any>;
         options?: Record<string, any>;
       },
     ): PipelineStage[] => {
@@ -234,7 +213,17 @@ class AggregationQuery<T = any> {
       
       // Get collection name from model or use path (mongoose pluralizes model names)
       // If model is provided, use it; otherwise try to infer from path
-      let collectionName = config?.model;
+      let collectionName: string | undefined;
+      if (config?.model) {
+        // Handle both string and Model type
+        if (typeof config.model === 'string') {
+          collectionName = config.model;
+        } else {
+          // It's a Model instance
+          collectionName = config.model.collection.name;
+        }
+      }
+      
       if (!collectionName) {
         // Try to get collection name from the model's schema
         const schema = this.model.schema;
@@ -273,9 +262,7 @@ class AggregationQuery<T = any> {
         if (typeof config.populate === 'string') {
           // Simple nested populate
           const nestedPath = config.populate;
-          // For nested populate, localField is the nested path itself
           const nestedLocalField = nestedPath;
-          // Get collection name for nested populate
           let nestedCollectionName = nestedPath.endsWith('s') ? nestedPath : nestedPath + 's';
           lookupPipeline.push({
             $lookup: {
@@ -301,12 +288,9 @@ class AggregationQuery<T = any> {
                 },
               });
             } else {
-              const nestedPopObj = nestedPop as {
-                path: string;
-                select?: string | Record<string, 0 | 1>;
-                match?: Record<string, any>;
-              };
-              const nestedPath: string = nestedPopObj.path;
+              // PopulateOptions object
+              const nestedPopObj = nestedPop as PopulateOptions;
+              const nestedPath: string = nestedPopObj.path || '';
               const nestedLocalField = nestedPath;
               const nestedCollectionName = nestedPath.endsWith('s') ? nestedPath : nestedPath + 's';
               const nestedLookupPipeline: any[] = [];
@@ -327,6 +311,28 @@ class AggregationQuery<T = any> {
               lookupPipeline.push(nestedLookup);
             }
           });
+        } else {
+          // Single PopulateOptions object
+          const nestedPopObj = config.populate as PopulateOptions;
+          const nestedPath: string = nestedPopObj.path || '';
+          const nestedLocalField = nestedPath;
+          const nestedCollectionName = nestedPath.endsWith('s') ? nestedPath : nestedPath + 's';
+          const nestedLookupPipeline: any[] = [];
+          if (nestedPopObj.match) {
+            nestedLookupPipeline.push({ $match: nestedPopObj.match });
+          }
+          const nestedLookup: any = {
+            $lookup: {
+              from: nestedCollectionName,
+              localField: nestedLocalField,
+              foreignField: '_id',
+              as: nestedPath,
+            },
+          };
+          if (nestedLookupPipeline.length > 0) {
+            nestedLookup.$lookup.pipeline = nestedLookupPipeline;
+          }
+          lookupPipeline.push(nestedLookup);
         }
       }
 
@@ -390,14 +396,34 @@ class AggregationQuery<T = any> {
           const stages = buildLookupStage(pop);
           this._pipeline.push(...stages);
         } else {
-          // Object-based populate
-          const stages = buildLookupStage(pop.path, pop);
+          // PopulateOptions object
+          const path = pop.path || '';
+          const config = {
+            select: pop.select,
+            match: pop.match,
+            populate: pop.populate,
+            model: pop.model,
+            ...pop,
+          };
+          const stages = buildLookupStage(path, config);
           this._pipeline.push(...stages);
         }
       });
-    } else {
+    } else if (typeof populateConfig === 'string') {
       // Simple string populate
       const stages = buildLookupStage(populateConfig);
+      this._pipeline.push(...stages);
+    } else {
+      // PopulateOptions object
+      const path = populateConfig.path || '';
+      const config = {
+        select: populateConfig.select,
+        match: populateConfig.match,
+        populate: populateConfig.populate,
+        model: populateConfig.model,
+        ...populateConfig,
+      };
+      const stages = buildLookupStage(path, config);
       this._pipeline.push(...stages);
     }
 

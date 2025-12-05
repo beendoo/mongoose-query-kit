@@ -1,4 +1,4 @@
-import { Document, FilterQuery, Model, Query } from 'mongoose';
+import { Document, FilterQuery, Model, Query, PopulateOptions } from 'mongoose';
 
 interface QueryParams {
   search?: string;
@@ -144,6 +144,17 @@ class FindQuery<T = any> {
         : (applicableFields?.join(' ') ?? '-__v');
 
     this.query = this.query.select(fieldSelection);
+    return this;
+  }
+
+  populate(
+    populateConfig:
+      | string
+      | PopulateOptions
+      | Array<string | PopulateOptions>,
+  ): this {
+    // Mongoose populate accepts string, PopulateOptions, or array of both
+    this.query = this.query.populate(populateConfig as any);
     return this;
   }
 

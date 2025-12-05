@@ -7,11 +7,25 @@ interface IUser extends mongoose.Document {
   email: string;
 }
 
+interface IPost extends mongoose.Document {
+  title: string;
+  content: string;
+  author: mongoose.Types.ObjectId;
+}
+
 const UserSchema = new Schema<IUser>({
   name: { type: String, required: true },
   email: { type: String, required: true },
 });
+
+const PostSchema = new Schema<IPost>({
+  title: { type: String, required: true },
+  content: { type: String, required: true },
+  author: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+});
+
 const User = model<IUser>('User', UserSchema);
+const Post = model<IPost>('Post', PostSchema);
 
 jest.setTimeout(60000); // increase timeout for MongoMemoryServer startup
 
@@ -141,6 +155,101 @@ describe('FindQuery', () => {
     expect(result.data).toHaveLength(2);
     expect(result.meta.limit).toBe(2);
     expect('_doc' in result.data[0]).toBe(false);
+  });
+
+  test('populate method works with string path', async () => {
+    await Post.deleteMany({});
+    const alice = await User.findOne({ name: 'Alice' });
+    await Post.create({
+      title: 'Test Post',
+      content: 'Test Content',
+      author: alice!._id,
+    });
+
+    const queryParams = {};
+    const findQuery = new FindQuery(Post, queryParams);
+    const result = await findQuery.populate('author').execute();
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].title).toBe('Test Post');
+    expect(result.data[0].author).toBeDefined();
+    expect(result.data[0].author.name).toBe('Alice');
+  });
+
+  test('populate method works with array of objects', async () => {
+    await Post.deleteMany({});
+    const alice = await User.findOne({ name: 'Alice' });
+    await Post.create({
+      title: 'Test Post',
+      content: 'Test Content',
+      author: alice!._id,
+    });
+
+    const queryParams = {};
+    const findQuery = new FindQuery(Post, queryParams);
+    const result = await findQuery
+      .populate([
+        {
+          path: 'author',
+          select: 'name email',
+        },
+      ])
+      .execute();
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].author).toBeDefined();
+    // Check if author is populated (not just ObjectId)
+    const author = result.data[0].author;
+    // Mongoose populate returns the document object, not ObjectId when populated
+    expect(author).not.toBeInstanceOf(mongoose.Types.ObjectId);
+    expect(author).toBeInstanceOf(Object);
+    // When select is used, only selected fields should be present
+    expect(author.name).toBe('Alice');
+    expect(author.email).toBe('alice@example.com');
+  });
+
+  test('populate method works with match option', async () => {
+    await Post.deleteMany({});
+    const alice = await User.findOne({ name: 'Alice' });
+    const bob = await User.findOne({ name: 'Bob' });
+    await Post.create([
+      {
+        title: 'Post 1',
+        content: 'Content 1',
+        author: alice!._id,
+      },
+      {
+        title: 'Post 2',
+        content: 'Content 2',
+        author: bob!._id,
+      },
+    ]);
+
+    const queryParams = {};
+    const findQuery = new FindQuery(Post, queryParams);
+    const result = await findQuery
+      .populate([
+        {
+          path: 'author',
+          match: { name: 'Alice' },
+        },
+      ])
+      .execute();
+
+    expect(result.data).toHaveLength(2);
+    // Post with Alice should have author populated
+    const postWithAlice = result.data.find((p) => p.title === 'Post 1');
+    expect(postWithAlice?.author).toBeDefined();
+    // Check if author is populated and matches Alice
+    const aliceAuthor = postWithAlice?.author;
+    // When match finds a match, author should be populated
+    expect(aliceAuthor).not.toBeNull();
+    expect(aliceAuthor).not.toBeInstanceOf(mongoose.Types.ObjectId);
+    expect(aliceAuthor.name).toBe('Alice');
+    // Post with Bob should have null author due to match filter
+    const postWithBob = result.data.find((p) => p.title === 'Post 2');
+    // When match filter doesn't find a match, mongoose sets the field to null
+    expect(postWithBob?.author).toBeNull();
   });
 });
 
@@ -277,5 +386,91 @@ describe('AggregationQuery', () => {
 
     expect(result.meta.statistics).toBeDefined();
     expect(result.meta.statistics?.total).toBe(3);
+  });
+
+  test('populate method works with string path', async () => {
+    const alice = await User.findOne({ name: 'Alice' });
+    await Post.create({
+      title: 'Test Post',
+      content: 'Test Content',
+      author: alice!._id,
+    });
+
+    const queryParams = {};
+    const aggQuery = new AggregationQuery(Post, queryParams);
+    const result = await aggQuery.populate('author').execute();
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].title).toBe('Test Post');
+    expect(result.data[0].author).toBeDefined();
+    expect(Array.isArray(result.data[0].author)).toBe(true);
+    if (Array.isArray(result.data[0].author) && result.data[0].author.length > 0) {
+      expect(result.data[0].author[0].name).toBe('Alice');
+    }
+  });
+
+  test('populate method works with array of objects', async () => {
+    await Post.deleteMany({});
+    const alice = await User.findOne({ name: 'Alice' });
+    await Post.create({
+      title: 'Test Post',
+      content: 'Test Content',
+      author: alice!._id,
+    });
+
+    const queryParams = {};
+    const aggQuery = new AggregationQuery(Post, queryParams);
+    const result = await aggQuery
+      .populate([
+        {
+          path: 'author',
+          select: 'name email',
+        },
+      ])
+      .execute();
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].author).toBeDefined();
+    if (Array.isArray(result.data[0].author) && result.data[0].author.length > 0) {
+      expect(result.data[0].author[0].name).toBe('Alice');
+      expect(result.data[0].author[0].email).toBe('alice@example.com');
+    }
+  });
+
+  test('populate method works with match option', async () => {
+    await Post.deleteMany({});
+    const alice = await User.findOne({ name: 'Alice' });
+    const bob = await User.findOne({ name: 'Bob' });
+    await Post.create([
+      {
+        title: 'Post 1',
+        content: 'Content 1',
+        author: alice!._id,
+      },
+      {
+        title: 'Post 2',
+        content: 'Content 2',
+        author: bob!._id,
+      },
+    ]);
+
+    const queryParams = {};
+    const aggQuery = new AggregationQuery(Post, queryParams);
+    const result = await aggQuery
+      .populate([
+        {
+          path: 'author',
+          match: { name: 'Alice' },
+        },
+      ])
+      .execute();
+
+    expect(result.data).toHaveLength(2);
+    // Post with Alice should have author populated
+    const postWithAlice = result.data.find((p) => p.title === 'Post 1');
+    expect(postWithAlice?.author).toBeDefined();
+    if (Array.isArray(postWithAlice?.author) && postWithAlice?.author.length > 0) {
+      expect(postWithAlice?.author[0].name).toBe('Alice');
+    }
   });
 });

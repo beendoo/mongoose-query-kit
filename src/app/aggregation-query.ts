@@ -189,6 +189,221 @@ class AggregationQuery<T = any> {
     return this;
   }
 
+  populate(
+    populateConfig:
+      | string
+      | Array<
+          | string
+          | {
+              path: string;
+              select?: string | Record<string, 0 | 1>;
+              match?: Record<string, any>;
+              populate?:
+                | string
+                | Array<{
+                    path: string;
+                    select?: string | Record<string, 0 | 1>;
+                    match?: Record<string, any>;
+                  }>;
+              model?: string;
+              options?: Record<string, any>;
+            }
+        >,
+  ): this {
+    const buildLookupStage = (
+      path: string,
+      config?: {
+        select?: string | Record<string, 0 | 1>;
+        match?: Record<string, any>;
+        populate?:
+          | string
+          | Array<{
+              path: string;
+              select?: string | Record<string, 0 | 1>;
+              match?: Record<string, any>;
+            }>;
+        model?: string;
+        options?: Record<string, any>;
+      },
+    ): PipelineStage[] => {
+      const stages: PipelineStage[] = [];
+      // For ObjectId references, localField is the same as path
+      const localField = path;
+      const foreignField = '_id';
+      const asField = path;
+      
+      // Get collection name from model or use path (mongoose pluralizes model names)
+      // If model is provided, use it; otherwise try to infer from path
+      let collectionName = config?.model;
+      if (!collectionName) {
+        // Try to get collection name from the model's schema
+        const schema = this.model.schema;
+        const pathSchema = schema.path(path);
+        if (pathSchema && (pathSchema as any).options?.ref) {
+          // Get the referenced model
+          const refModelName = (pathSchema as any).options.ref;
+          try {
+            const refModel = this.model.db.model(refModelName);
+            if (refModel && refModel.collection) {
+              collectionName = refModel.collection.name;
+            } else {
+              // Fallback: pluralize model name (mongoose default: ModelName -> modelnames)
+              collectionName = refModelName.toLowerCase() + 's';
+            }
+          } catch (e) {
+            // Fallback: pluralize model name (mongoose default)
+            collectionName = refModelName.toLowerCase() + 's';
+          }
+        } else {
+          // Fallback: pluralize the path
+          collectionName = path.endsWith('s') ? path : path + 's';
+        }
+      }
+
+      // Build lookup pipeline
+      const lookupPipeline: PipelineStage[] = [];
+
+      // Add match if provided
+      if (config?.match) {
+        lookupPipeline.push({ $match: config.match });
+      }
+
+      // Handle nested populate
+      if (config?.populate) {
+        if (typeof config.populate === 'string') {
+          // Simple nested populate
+          const nestedPath = config.populate;
+          // For nested populate, localField is the nested path itself
+          const nestedLocalField = nestedPath;
+          // Get collection name for nested populate
+          let nestedCollectionName = nestedPath.endsWith('s') ? nestedPath : nestedPath + 's';
+          lookupPipeline.push({
+            $lookup: {
+              from: nestedCollectionName,
+              localField: nestedLocalField,
+              foreignField: '_id',
+              as: nestedPath,
+            },
+          });
+        } else if (Array.isArray(config.populate)) {
+          // Array of nested populates
+          config.populate.forEach((nestedPop) => {
+            if (typeof nestedPop === 'string') {
+              const nestedPath: string = nestedPop;
+              const nestedLocalField = nestedPath;
+              const nestedCollectionName = nestedPath.endsWith('s') ? nestedPath : nestedPath + 's';
+              lookupPipeline.push({
+                $lookup: {
+                  from: nestedCollectionName,
+                  localField: nestedLocalField,
+                  foreignField: '_id',
+                  as: nestedPath,
+                },
+              });
+            } else {
+              const nestedPopObj = nestedPop as {
+                path: string;
+                select?: string | Record<string, 0 | 1>;
+                match?: Record<string, any>;
+              };
+              const nestedPath: string = nestedPopObj.path;
+              const nestedLocalField = nestedPath;
+              const nestedCollectionName = nestedPath.endsWith('s') ? nestedPath : nestedPath + 's';
+              const nestedLookupPipeline: any[] = [];
+              if (nestedPopObj.match) {
+                nestedLookupPipeline.push({ $match: nestedPopObj.match });
+              }
+              const nestedLookup: any = {
+                $lookup: {
+                  from: nestedCollectionName,
+                  localField: nestedLocalField,
+                  foreignField: '_id',
+                  as: nestedPath,
+                },
+              };
+              if (nestedLookupPipeline.length > 0) {
+                nestedLookup.$lookup.pipeline = nestedLookupPipeline;
+              }
+              lookupPipeline.push(nestedLookup);
+            }
+          });
+        }
+      }
+
+      // Build lookup stage
+      const lookupStage: any = {
+        $lookup: {
+          from: collectionName,
+          localField: localField,
+          foreignField: foreignField,
+          as: asField,
+        },
+      };
+
+      if (lookupPipeline.length > 0) {
+        lookupStage.$lookup.pipeline = lookupPipeline;
+      }
+
+      stages.push(lookupStage);
+
+      // Add project stage for select if provided
+      if (config?.select) {
+        const projectObj: Record<string, 1 | 0> = {};
+        if (typeof config.select === 'string') {
+          // Parse string select like "name email -password"
+          const fields = config.select.split(/\s+/);
+          fields.forEach((field) => {
+            const fieldName = field.startsWith('-') ? field.slice(1) : field;
+            const include = field.startsWith('-') ? 0 : 1;
+            projectObj[fieldName] = include;
+          });
+        } else {
+          // Use object directly
+          Object.assign(projectObj, config.select);
+        }
+
+        // Add $project to lookup pipeline to select specific fields
+        const selectProject: Record<string, 1 | 0> = {};
+        Object.keys(projectObj).forEach((key) => {
+          if (projectObj[key] === 1) {
+            selectProject[key] = 1;
+          }
+        });
+
+        if (Object.keys(selectProject).length > 0) {
+          // Add project to the lookup pipeline
+          if (!lookupStage.$lookup.pipeline) {
+            lookupStage.$lookup.pipeline = [];
+          }
+          lookupStage.$lookup.pipeline.push({ $project: selectProject });
+        }
+      }
+
+      return stages;
+    };
+
+    if (Array.isArray(populateConfig)) {
+      // Array-based populate
+      populateConfig.forEach((pop) => {
+        if (typeof pop === 'string') {
+          // Simple string populate
+          const stages = buildLookupStage(pop);
+          this._pipeline.push(...stages);
+        } else {
+          // Object-based populate
+          const stages = buildLookupStage(pop.path, pop);
+          this._pipeline.push(...stages);
+        }
+      });
+    } else {
+      // Simple string populate
+      const stages = buildLookupStage(populateConfig);
+      this._pipeline.push(...stages);
+    }
+
+    return this;
+  }
+
   tap(callback: (pipeline: PipelineStage[]) => PipelineStage[]): this {
     this._pipeline = callback(this._pipeline);
     return this;

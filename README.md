@@ -251,6 +251,51 @@ const result = await new AggregationQuery(UserModel, req.query)
   .execute();
 ```
 
+### FindQuery - With Populate
+
+```ts
+import { FindQuery } from 'mongoose-query-kit';
+
+const result = await new FindQuery(PostModel, req.query)
+  .filter()
+  .populate([
+    {
+      path: 'author',
+      select: 'name email',
+    },
+    {
+      path: 'comments',
+      select: 'text createdAt',
+      match: { approved: true },
+      populate: {
+        path: 'author',
+        select: 'name',
+      },
+    },
+  ])
+  .paginate()
+  .execute();
+```
+
+### AggregationQuery - With Populate
+
+```ts
+import { AggregationQuery } from 'mongoose-query-kit';
+
+const result = await new AggregationQuery(PostModel, req.query)
+  .filter()
+  .populate([
+    {
+      path: 'author',
+      select: 'name email',
+      match: { active: true },
+    },
+  ])
+  .sort(['createdAt'])
+  .paginate()
+  .execute();
+```
+
 ### Count Only Query
 
 If your query includes `is_count_only=true`, both query builders will return only the total count in the response, skipping data fetching for performance.
@@ -343,6 +388,7 @@ const result = await new FindQuery(UserModel, req.query)
 | `sort()`     | Sorts results, e.g. `?sort=name` or `?sort=-createdAt`                     |
 | `fields()`   | Selects fields to include, e.g. `?fields=name,email`                       |
 | `paginate()` | Adds pagination via `?page=1&limit=10`                                     |
+| `populate()` | Populates referenced documents (FindQuery uses populate, AggregationQuery uses $lookup) |
 | `tap()`      | Provides direct access to modify the query/pipeline                        |
 | `execute()`  | Runs the query, returns result and meta info. Accepts optional statistics  |
 
@@ -420,6 +466,54 @@ Adds pagination to the query.
 // Query: ?page=2&limit=20
 new FindQuery(UserModel, req.query)
   .paginate()
+```
+
+#### `populate(populateConfig)`
+Populates referenced documents. Supports both simple string paths and complex object configurations.
+
+**Parameters:**
+- `populateConfig`: String path or array of populate configurations
+
+**FindQuery Example:**
+```ts
+// Simple string populate
+new FindQuery(PostModel, req.query)
+  .populate('author')
+  .execute();
+
+// Array-based populate with options
+new FindQuery(PostModel, req.query)
+  .populate([
+    'author',
+    {
+      path: 'comments',
+      select: 'text createdAt',
+      match: { approved: true },
+    },
+    {
+      path: 'category',
+      select: 'name',
+      populate: {
+        path: 'parent',
+        select: 'name',
+      },
+    },
+  ])
+  .execute();
+```
+
+**AggregationQuery Example:**
+```ts
+// AggregationQuery uses $lookup internally
+new AggregationQuery(PostModel, req.query)
+  .populate([
+    {
+      path: 'author',
+      select: 'name email',
+      match: { active: true },
+    },
+  ])
+  .execute();
 ```
 
 #### `tap(callback)`
